@@ -4,9 +4,9 @@
 """
 Generador de Códigos QR con Inserción en Excel
 ----------------------------------------------
-Este script lee un archivo Excel, extrae nombres (columna A) y enlaces (columna W),
-genera códigos QR para cada enlace, los guarda como archivos PNG en una carpeta con
-fecha y hora, y además los inserta en la columna X del mismo archivo Excel.
+Este script lee un archivo Excel, extrae ID_Unico (columna A),
+genera códigos QR para cada ID, los guarda como archivos PNG en una carpeta con
+fecha y hora, y además los inserta en la columna QR (columna N) del mismo archivo Excel.
 """
 
 import os
@@ -26,7 +26,7 @@ def limpiar_nombre_archivo(nombre):
     Reemplaza espacios por guiones bajos y elimina caracteres especiales.
     """
     # Reemplazar espacios por guiones bajos y convertir a minúsculas
-    nombre = nombre.strip().lower().replace(' ', '_')
+    nombre = str(nombre).strip().lower().replace(' ', '_')
     # Eliminar caracteres no alfanuméricos excepto guiones bajos
     nombre = re.sub(r'[^a-z0-9_]', '', nombre)
     return nombre
@@ -36,7 +36,7 @@ def generar_qr(texto, nombre_archivo=None, tamano=10, return_image=False):
     Genera un código QR a partir de un texto y lo guarda como archivo PNG.
     
     Args:
-        texto (str): Contenido del código QR (enlace)
+        texto (str): Contenido del código QR (ID_Unico)
         nombre_archivo (str, optional): Nombre del archivo sin extensión
         tamano (int): Tamaño del código QR (1-40)
         return_image (bool): Si es True, devuelve la imagen en memoria
@@ -81,8 +81,8 @@ def generar_qr(texto, nombre_archivo=None, tamano=10, return_image=False):
 
 def procesar_excel(ruta_archivo):
     """
-    Lee un archivo Excel, genera códigos QR para cada enlace en la columna W,
-    los guarda como archivos PNG y los inserta en la columna X del Excel.
+    Lee un archivo Excel, genera códigos QR para cada ID_Unico en la columna A,
+    los guarda como archivos PNG y los inserta en la columna N (QR) del Excel.
     
     Args:
         ruta_archivo (str): Ruta al archivo Excel
@@ -108,26 +108,17 @@ def procesar_excel(ruta_archivo):
         print(f"Leyendo archivo {ruta_archivo}...")
         df = pd.read_excel(ruta_archivo)
         
-        # Verificar si existen las columnas requeridas
-        if 'Unnamed: 0' in df.columns:  # Primera columna sin nombre
-            nombres_col = 'Unnamed: 0'
-        elif df.columns[0].lower() in ['nombre', 'nombres', 'usuario', 'name']:
-            nombres_col = df.columns[0]
+        # Identificar columna ID_Unico (columna A)
+        if 'ID_Unico' in df.columns:
+            id_col = 'ID_Unico'
+        elif 'Unnamed: 0' in df.columns:  # Primera columna sin nombre
+            id_col = 'Unnamed: 0'
         else:
             # Si no encontramos una columna obvia, usamos la primera
-            nombres_col = df.columns[0]
-            print(f"Usando columna '{nombres_col}' para nombres.")
+            id_col = df.columns[0]
+            print(f"Usando columna '{id_col}' para ID_Unico.")
         
-        # Buscar columna W o columna llamada "Link"
-        if len(df.columns) >= 23:  # Columna W sería la 23ª columna (0-indexed)
-            links_col = df.columns[22]  # Índice 22 corresponde a la columna W
-        elif 'Link' in df.columns or 'link' in df.columns or 'URL' in df.columns or 'url' in df.columns:
-            links_col = next(col for col in df.columns if col.lower() in ['link', 'url'])
-        else:
-            print("Error: No se pudo identificar la columna de enlaces (W).")
-            return
-        
-        print(f"Usando columna '{links_col}' para enlaces.")
+        print(f"Usando columna '{id_col}' para generar códigos QR.")
         
         # Contar registros totales
         total_registros = len(df)
@@ -142,20 +133,19 @@ def procesar_excel(ruta_archivo):
             sys.stdout.write(f"\rGenerando QR: {indice + 1}/{total_registros} ({progreso:.1f}%)   ")
             sys.stdout.flush()
             
-            # Obtener nombre y enlace
-            nombre = str(fila[nombres_col])
-            enlace = str(fila[links_col])
+            # Obtener ID_Unico
+            id_unico = str(fila[id_col])
             
             # Verificar si hay datos válidos
-            if pd.isna(nombre) or pd.isna(enlace) or enlace.strip() == '':
+            if pd.isna(id_unico) or id_unico.strip() == '' or id_unico == 'nan':
                 continue
             
-            # Limpiar nombre para archivo
-            nombre_archivo = limpiar_nombre_archivo(nombre)
+            # Limpiar nombre para archivo (usamos el ID_Unico para nombrar el archivo)
+            nombre_archivo = limpiar_nombre_archivo(id_unico)
             ruta_archivo_qr = os.path.join(directorio_qr, nombre_archivo)
             
-            # Generar código QR
-            resultado = generar_qr(enlace, ruta_archivo_qr)
+            # Generar código QR usando el ID_Unico como contenido
+            resultado = generar_qr(id_unico, ruta_archivo_qr)
             if resultado:
                 registros_exitosos += 1
         
@@ -166,26 +156,26 @@ def procesar_excel(ruta_archivo):
         wb = openpyxl.load_workbook(ruta_archivo)
         ws = wb.active
         
-        # Determinar índice de columna X
-        col_x_index = 24  # Columna X es la 24ª columna (1-indexed)
+        # Determinar índice de columna N (QR)
+        col_n_index = 14  # Columna N es la 14ª columna (1-indexed)
         
-        # Insertar imágenes QR en la columna X
+        # Insertar imágenes QR en la columna N
         for row in range(2, total_registros + 2):  # +2 porque Excel es 1-indexed y tiene cabecera
-            # Obtener nombre de la columna A
-            nombre = str(ws.cell(row=row, column=1).value)
+            # Obtener ID_Unico de la columna A
+            id_unico = str(ws.cell(row=row, column=1).value)
             # Mostrar progreso
             progreso = (row - 1) / total_registros * 100
             sys.stdout.write(f"\rInsertando en Excel: {row-1}/{total_registros} ({progreso:.1f}%)   ")
             sys.stdout.flush()
             
-            if nombre and nombre != "None":
-                nombre_archivo = limpiar_nombre_archivo(nombre)
+            if id_unico and id_unico != "None" and id_unico.strip() != '':
+                nombre_archivo = limpiar_nombre_archivo(id_unico)
                 ruta_qr = os.path.join(directorio_qr, nombre_archivo + ".png")
                 
                 if os.path.exists(ruta_qr):
                     # Ajustar tamaño de la celda para la imagen
                     ws.row_dimensions[row].height = 120
-                    ws.column_dimensions[openpyxl.utils.get_column_letter(col_x_index)].width = 20
+                    ws.column_dimensions[openpyxl.utils.get_column_letter(col_n_index)].width = 20
                     
                     # Añadir imagen a la celda
                     img = XLImage(ruta_qr)
@@ -193,8 +183,8 @@ def procesar_excel(ruta_archivo):
                     img.width = 120
                     img.height = 120
                     
-                    # Insertamos la imagen en la celda X correspondiente
-                    cell = ws.cell(row=row, column=col_x_index)
+                    # Insertamos la imagen en la celda N correspondiente
+                    cell = ws.cell(row=row, column=col_n_index)
                     ws.add_image(img, cell.coordinate)
         
         # Guardar el archivo Excel con un nuevo nombre
@@ -214,13 +204,13 @@ def procesar_excel(ruta_archivo):
 def main():
     # Mensaje de bienvenida
     print("=" * 70)
-    print("GENERADOR DE CÓDIGOS QR DESDE EXCEL CON INSERCIÓN EN COLUMNA X")
+    print("GENERADOR DE CÓDIGOS QR DESDE EXCEL CON INSERCIÓN EN COLUMNA N")
     print("=" * 70)
     print("Este script:")
     print("1. Lee un archivo Excel")
-    print("2. Genera códigos QR a partir de los enlaces en la columna W")
+    print("2. Genera códigos QR a partir de los ID_Unico en la columna A")
     print("3. Guarda los QR como imágenes PNG en una carpeta con fecha y hora")
-    print("4. Inserta los códigos QR en la columna X del archivo Excel")
+    print("4. Inserta los códigos QR en la columna N (QR) del archivo Excel")
     print("=" * 70)
     
     # Solicitar ruta del archivo
